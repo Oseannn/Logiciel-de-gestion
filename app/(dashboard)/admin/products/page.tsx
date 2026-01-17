@@ -61,44 +61,18 @@ export default function ProductsPage() {
   const supabase = createClient()
   const supabaseUntyped = createUntypedClient()
 
-  // Utiliser le cache pour les produits
+  // Utiliser le cache pour les produits - via API Route pour éviter les timeouts
   const fetchProducts = useCallback(async () => {
-    // Requête 1: Récupérer les produits
-    const { data: productsData, error: productsError } = await supabaseUntyped
-      .from('products')
-      .select('id, name, sku, brand, category, price, image_url, active')
-      .order('name') as { data: Omit<Product, 'product_variants'>[] | null, error: any }
+    const response = await fetch('/api/products')
 
-    if (productsError) {
-      console.error('Error loading products:', productsError)
-      throw productsError
+    if (!response.ok) {
+      const error = await response.json()
+      console.error('Error loading products:', error)
+      throw new Error(error.error || 'Failed to load products')
     }
 
-    if (!productsData || productsData.length === 0) {
-      return []
-    }
-
-    // Requête 2: Récupérer les variantes séparément
-    const { data: variantsData, error: variantsError } = await supabaseUntyped
-      .from('product_variants')
-      .select('id, product_id, size, color, stock') as { data: ProductVariantWithProductId[] | null, error: any }
-
-    if (variantsError) {
-      console.error('Error loading variants:', variantsError)
-      // Continuer sans les variantes si erreur
-    }
-
-    // Combiner les données
-    const variantsByProduct = (variantsData || []).reduce((acc, v) => {
-      if (!acc[v.product_id]) acc[v.product_id] = []
-      acc[v.product_id].push({ id: v.id, size: v.size, color: v.color, stock: v.stock })
-      return acc
-    }, {} as Record<string, ProductVariant[]>)
-
-    return productsData.map(p => ({
-      ...p,
-      product_variants: variantsByProduct[p.id] || []
-    })) as Product[]
+    const products = await response.json()
+    return products as Product[]
   }, [])
 
   const { data: products, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
