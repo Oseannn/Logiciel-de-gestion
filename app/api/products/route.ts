@@ -1,6 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// Forcer le rendu dynamique (pas de pré-rendu au build)
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // Utiliser le service role key pour contourner RLS et avoir plus de permissions
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

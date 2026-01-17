@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
+// Forcer le rendu dynamique (pas de pré-rendu au build)
+export const dynamic = 'force-dynamic'
+
 // Create admin client with service role key
 function createAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
