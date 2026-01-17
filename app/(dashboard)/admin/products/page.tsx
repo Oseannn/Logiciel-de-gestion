@@ -59,26 +59,42 @@ export default function ProductsPage() {
 
   // Utiliser le cache pour les produits
   const fetchProducts = useCallback(async () => {
-    const { data, error } = await supabase
+    // Requête 1: Récupérer les produits
+    const { data: productsData, error: productsError } = await supabase
       .from('products')
-      .select(`
-        id,
-        name,
-        sku,
-        brand,
-        category,
-        price,
-        image_url,
-        active,
-        product_variants(id, size, color, stock)
-      `)
+      .select('id, name, sku, brand, category, price, image_url, active')
       .order('name')
 
-    if (error) {
-      console.error('Error loading products:', error)
-      throw error
+    if (productsError) {
+      console.error('Error loading products:', productsError)
+      throw productsError
     }
-    return data as Product[]
+
+    if (!productsData || productsData.length === 0) {
+      return []
+    }
+
+    // Requête 2: Récupérer les variantes séparément
+    const { data: variantsData, error: variantsError } = await supabase
+      .from('product_variants')
+      .select('id, product_id, size, color, stock')
+
+    if (variantsError) {
+      console.error('Error loading variants:', variantsError)
+      // Continuer sans les variantes si erreur
+    }
+
+    // Combiner les données
+    const variantsByProduct = (variantsData || []).reduce((acc, v) => {
+      if (!acc[v.product_id]) acc[v.product_id] = []
+      acc[v.product_id].push({ id: v.id, size: v.size, color: v.color, stock: v.stock })
+      return acc
+    }, {} as Record<string, ProductVariant[]>)
+
+    return productsData.map(p => ({
+      ...p,
+      product_variants: variantsByProduct[p.id] || []
+    })) as Product[]
   }, [supabase])
 
   const { data: products, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
