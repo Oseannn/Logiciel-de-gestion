@@ -20,6 +20,10 @@ interface ProductVariant {
   stock: number
 }
 
+interface ProductVariantWithProductId extends ProductVariant {
+  product_id: string
+}
+
 interface Product {
   id: string
   name: string
@@ -60,10 +64,10 @@ export default function ProductsPage() {
   // Utiliser le cache pour les produits
   const fetchProducts = useCallback(async () => {
     // Requête 1: Récupérer les produits
-    const { data: productsData, error: productsError } = await supabase
+    const { data: productsData, error: productsError } = await supabaseUntyped
       .from('products')
       .select('id, name, sku, brand, category, price, image_url, active')
-      .order('name')
+      .order('name') as { data: Omit<Product, 'product_variants'>[] | null, error: any }
 
     if (productsError) {
       console.error('Error loading products:', productsError)
@@ -75,9 +79,9 @@ export default function ProductsPage() {
     }
 
     // Requête 2: Récupérer les variantes séparément
-    const { data: variantsData, error: variantsError } = await supabase
+    const { data: variantsData, error: variantsError } = await supabaseUntyped
       .from('product_variants')
-      .select('id, product_id, size, color, stock')
+      .select('id, product_id, size, color, stock') as { data: ProductVariantWithProductId[] | null, error: any }
 
     if (variantsError) {
       console.error('Error loading variants:', variantsError)
@@ -95,7 +99,7 @@ export default function ProductsPage() {
       ...p,
       product_variants: variantsByProduct[p.id] || []
     })) as Product[]
-  }, [supabase])
+  }, [])
 
   const { data: products, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
     'products',
