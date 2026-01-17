@@ -54,7 +54,16 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  // Timeout de 5 secondes pour éviter le blocage
+  try {
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Auth timeout')), 5000)
+    )
+    await Promise.race([supabase.auth.getUser(), timeoutPromise])
+  } catch (error) {
+    console.error('Auth check failed or timed out:', error)
+    // Continuer sans bloquer
+  }
 
   return response
 }
