@@ -45,10 +45,5 @@
       ]
     }
   ],
-  "crons": [
-    {
-      "path": "/api/cron/keep-alive",
-      "schedule": "*/10 * * * *"
-    }
-  ]
+  "crons": []
 }

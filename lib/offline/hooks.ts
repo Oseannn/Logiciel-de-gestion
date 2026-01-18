@@ -16,32 +16,32 @@ export function useOfflineProducts() {
   const loadProducts = useCallback(async () => {
     setLoading(true)
 
-    // Essayer d'abord en ligne via l'API (plus fiable, évite les problèmes RLS)
+    // Essayer d'abord en ligne
     if (navigator.onLine) {
       try {
-        // Charger tous les produits pour le POS (limite haute)
-        const response = await fetch('/api/products?limit=50&page=1')
-        
-        if (response.ok) {
-          const result = await response.json()
-          
-          // Gérer l'ancien format (array) et le nouveau format (object avec pagination)
-          const data = Array.isArray(result) ? result : (result.data || [])
-          
-          const offlineProducts: OfflineProduct[] = data
-            .filter((p: any) => p.active !== false) // Ne garder que les produits actifs
-            .map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              sku: p.sku,
-              brand: p.brand,
-              category: p.category,
-              price: p.price,
-              image_url: p.image_url,
-              active: p.active,
-              variants: (p.product_variants || []) as any[],
-              synced_at: new Date().toISOString()
-            }))
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('products')
+          .select(`
+            id, name, sku, brand, category, price, image_url, active,
+            product_variants (id, product_id, size, color, stock)
+          `)
+          .eq('active', true)
+          .order('name') as { data: { id: string; name: string; sku: string | null; brand: string | null; category: string; price: number; image_url: string | null; active: boolean; product_variants: any[] }[] | null; error: any }
+
+        if (!error && data) {
+          const offlineProducts: OfflineProduct[] = data.map(p => ({
+            id: p.id,
+            name: p.name,
+            sku: p.sku,
+            brand: p.brand,
+            category: p.category,
+            price: p.price,
+            image_url: p.image_url,
+            active: p.active,
+            variants: (p.product_variants || []) as any[],
+            synced_at: new Date().toISOString()
+          }))
 
           setProducts(offlineProducts)
           setIsOffline(false)
@@ -55,7 +55,7 @@ export function useOfflineProducts() {
           return
         }
       } catch (error) {
-        console.error('Erreur chargement produits via API:', error)
+        console.error('Erreur chargement produits online:', error)
       }
     }
 

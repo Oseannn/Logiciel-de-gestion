@@ -43,10 +43,6 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
-  // Pagination simple côté client
-  const [currentPage, setCurrentPage] = useState(1)
-  const ITEMS_PER_PAGE = 10
 
   // Form state
   const [formData, setFormData] = useState({
@@ -65,9 +61,9 @@ export default function ProductsPage() {
   const supabase = createClient()
   const supabaseUntyped = createUntypedClient()
 
-  // Charger tous les produits une seule fois, pagination côté client
+  // Utiliser le cache pour les produits - via API Route pour éviter les timeouts
   const fetchProducts = useCallback(async () => {
-    const response = await fetch('/api/products?limit=100')
+    const response = await fetch('/api/products')
 
     if (!response.ok) {
       const error = await response.json()
@@ -75,33 +71,21 @@ export default function ProductsPage() {
       throw new Error(error.error || 'Failed to load products')
     }
 
-    const result = await response.json()
-    return Array.isArray(result) ? result as Product[] : (result.data || []) as Product[]
+    const products = await response.json()
+    return products as Product[]
   }, [])
 
-  const { data: allProducts, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
+  const { data: products, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
     'products',
     fetchProducts,
-    { ttl: 300000 } // Cache 5 minutes
+    { ttl: 60000 }
   )
 
-  // Pagination côté client
-  const products = allProducts || []
-  const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE)
-  const totalProducts = products.length
-
-  // Filtrer par recherche
-  const searchedProducts = products.filter(p =>
+  const filteredProducts = (products || []).filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.category?.toLowerCase().includes(search.toLowerCase()) ||
     p.brand?.toLowerCase().includes(search.toLowerCase())
   )
-
-  // Appliquer la pagination côté client
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-  const filteredProducts = search 
-    ? searchedProducts // Si recherche, afficher tous les résultats
-    : searchedProducts.slice(startIndex, startIndex + ITEMS_PER_PAGE)
 
   const openModal = (product?: Product) => {
     if (product) {
@@ -478,7 +462,7 @@ export default function ProductsPage() {
       {/* Products Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Produits ({search ? filteredProducts.length : totalProducts || filteredProducts.length})</CardTitle>
+          <CardTitle>Produits ({filteredProducts.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -577,74 +561,6 @@ export default function ProductsPage() {
             </div>
           )}
         </CardContent>
-        
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
-            <div className="text-sm text-gray-500">
-              Page {currentPage} sur {totalPages} ({totalProducts} produits)
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1 || loading}
-                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Icon name="first_page" />
-              </button>
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1 || loading}
-                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Icon name="chevron_left" />
-              </button>
-              
-              {/* Numéros de page */}
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum: number
-                if (totalPages <= 5) {
-                  pageNum = i + 1
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i
-                } else {
-                  pageNum = currentPage - 2 + i
-                }
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    disabled={loading}
-                    className={`px-3 py-1.5 text-sm rounded-lg ${
-                      currentPage === pageNum
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    } disabled:opacity-50`}
-                  >
-                    {pageNum}
-                  </button>
-                )
-              })}
-              
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages || loading}
-                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Icon name="chevron_right" />
-              </button>
-              <button
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage === totalPages || loading}
-                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Icon name="last_page" />
-              </button>
-            </div>
-          </div>
-        )}
       </Card>
 
       {/* Product Modal */}

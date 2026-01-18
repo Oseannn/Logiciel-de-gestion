@@ -13,40 +13,8 @@ const globalCache: Map<string, CacheEntry<any>> = new Map()
 // Listeners pour les mises à jour en temps réel
 const cacheListeners: Map<string, Set<(data: any) => void>> = new Map()
 
-// Durée de validité du cache (10 minutes pour réduire les appels)
-const CACHE_TTL = 10 * 60 * 1000
-
-// Charger le cache depuis localStorage au démarrage
-if (typeof window !== 'undefined') {
-  try {
-    const savedCache = localStorage.getItem('retailos_cache')
-    if (savedCache) {
-      const parsed = JSON.parse(savedCache)
-      Object.entries(parsed).forEach(([key, entry]: [string, any]) => {
-        // Ne charger que si le cache a moins de 10 minutes
-        if (Date.now() - entry.timestamp < CACHE_TTL) {
-          globalCache.set(key, entry)
-        }
-      })
-    }
-  } catch (e) {
-    console.warn('Failed to load cache from localStorage')
-  }
-}
-
-// Sauvegarder le cache dans localStorage
-function saveToLocalStorage() {
-  if (typeof window === 'undefined') return
-  try {
-    const cacheObj: Record<string, CacheEntry<any>> = {}
-    globalCache.forEach((value, key) => {
-      cacheObj[key] = value
-    })
-    localStorage.setItem('retailos_cache', JSON.stringify(cacheObj))
-  } catch (e) {
-    console.warn('Failed to save cache to localStorage')
-  }
-}
+// Durée de validité du cache (5 minutes)
+const CACHE_TTL = 5 * 60 * 1000
 
 // Notifier tous les listeners d'une clé
 function notifyListeners(key: string, data: any) {
@@ -96,7 +64,6 @@ export function useDataCache<T>(
     try {
       const result = await fetcher()
       globalCache.set(key, { data: result, timestamp: Date.now() })
-      saveToLocalStorage() // Persister le cache
       setData(result)
       notifyListeners(key, result)
       return result

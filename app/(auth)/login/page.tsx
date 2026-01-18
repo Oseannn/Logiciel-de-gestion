@@ -76,9 +76,6 @@ export default function LoginPage() {
             last_seen: new Date().toISOString()
           }).eq('id', data.user.id)
           
-          // Précharger les produits en arrière-plan (réveille Supabase)
-          fetch('/api/products').catch(() => {})
-          
           toast.success('Connexion réussie !')
           router.push(`/${role}`)
         } else {
