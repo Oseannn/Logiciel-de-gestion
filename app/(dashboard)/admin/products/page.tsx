@@ -44,10 +44,8 @@ export default function ProductsPage() {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
-  // Pagination
+  // Pagination simple côté client
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalProducts, setTotalProducts] = useState(0)
   const ITEMS_PER_PAGE = 10
 
   // Form state
@@ -67,9 +65,9 @@ export default function ProductsPage() {
   const supabase = createClient()
   const supabaseUntyped = createUntypedClient()
 
-  // Utiliser le cache pour les produits avec pagination
+  // Charger tous les produits une seule fois, pagination côté client
   const fetchProducts = useCallback(async () => {
-    const response = await fetch(`/api/products?page=${currentPage}&limit=${ITEMS_PER_PAGE}`)
+    const response = await fetch('/api/products?limit=100')
 
     if (!response.ok) {
       const error = await response.json()
@@ -78,34 +76,32 @@ export default function ProductsPage() {
     }
 
     const result = await response.json()
-    
-    // Gérer l'ancien format (array) et le nouveau format (object avec pagination)
-    if (Array.isArray(result)) {
-      return result as Product[]
-    }
-    
-    // Nouveau format avec pagination
-    setTotalPages(result.pagination?.totalPages || 1)
-    setTotalProducts(result.pagination?.total || 0)
-    return result.data as Product[]
-  }, [currentPage])
+    return Array.isArray(result) ? result as Product[] : (result.data || []) as Product[]
+  }, [])
 
-  const { data: products, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
-    `products-page-${currentPage}`,
+  const { data: allProducts, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
+    'products',
     fetchProducts,
-    { ttl: 60000 }
+    { ttl: 300000 } // Cache 5 minutes
   )
 
-  // Recharger quand la page change
-  useEffect(() => {
-    loadProducts()
-  }, [currentPage])
+  // Pagination côté client
+  const products = allProducts || []
+  const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE)
+  const totalProducts = products.length
 
-  const filteredProducts = (products || []).filter(p =>
+  // Filtrer par recherche
+  const searchedProducts = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.category?.toLowerCase().includes(search.toLowerCase()) ||
     p.brand?.toLowerCase().includes(search.toLowerCase())
   )
+
+  // Appliquer la pagination côté client
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const filteredProducts = search 
+    ? searchedProducts // Si recherche, afficher tous les résultats
+    : searchedProducts.slice(startIndex, startIndex + ITEMS_PER_PAGE)
 
   const openModal = (product?: Product) => {
     if (product) {
