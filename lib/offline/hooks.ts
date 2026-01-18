@@ -19,38 +19,40 @@ export function useOfflineProducts() {
     // Essayer d'abord en ligne via l'API (plus fiable, évite les problèmes RLS)
     if (navigator.onLine) {
       try {
-        const response = await fetch('/api/products')
+        // Charger tous les produits pour le POS (limite haute)
+        const response = await fetch('/api/products?limit=50&page=1')
         
         if (response.ok) {
-          const data = await response.json()
+          const result = await response.json()
           
-          if (Array.isArray(data)) {
-            const offlineProducts: OfflineProduct[] = data
-              .filter((p: any) => p.active !== false) // Ne garder que les produits actifs
-              .map((p: any) => ({
-                id: p.id,
-                name: p.name,
-                sku: p.sku,
-                brand: p.brand,
-                category: p.category,
-                price: p.price,
-                image_url: p.image_url,
-                active: p.active,
-                variants: (p.product_variants || []) as any[],
-                synced_at: new Date().toISOString()
-              }))
+          // Gérer l'ancien format (array) et le nouveau format (object avec pagination)
+          const data = Array.isArray(result) ? result : (result.data || [])
+          
+          const offlineProducts: OfflineProduct[] = data
+            .filter((p: any) => p.active !== false) // Ne garder que les produits actifs
+            .map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              sku: p.sku,
+              brand: p.brand,
+              category: p.category,
+              price: p.price,
+              image_url: p.image_url,
+              active: p.active,
+              variants: (p.product_variants || []) as any[],
+              synced_at: new Date().toISOString()
+            }))
 
-            setProducts(offlineProducts)
-            setIsOffline(false)
+          setProducts(offlineProducts)
+          setIsOffline(false)
 
-            // Sauvegarder pour usage hors ligne
-            if (offlineDB) {
-              await offlineDB.saveProducts(offlineProducts)
-            }
-
-            setLoading(false)
-            return
+          // Sauvegarder pour usage hors ligne
+          if (offlineDB) {
+            await offlineDB.saveProducts(offlineProducts)
           }
+
+          setLoading(false)
+          return
         }
       } catch (error) {
         console.error('Erreur chargement produits via API:', error)

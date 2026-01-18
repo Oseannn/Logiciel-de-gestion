@@ -43,6 +43,12 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalProducts, setTotalProducts] = useState(0)
+  const ITEMS_PER_PAGE = 10
 
   // Form state
   const [formData, setFormData] = useState({
@@ -61,9 +67,9 @@ export default function ProductsPage() {
   const supabase = createClient()
   const supabaseUntyped = createUntypedClient()
 
-  // Utiliser le cache pour les produits - via API Route pour éviter les timeouts
+  // Utiliser le cache pour les produits avec pagination
   const fetchProducts = useCallback(async () => {
-    const response = await fetch('/api/products')
+    const response = await fetch(`/api/products?page=${currentPage}&limit=${ITEMS_PER_PAGE}`)
 
     if (!response.ok) {
       const error = await response.json()
@@ -71,15 +77,29 @@ export default function ProductsPage() {
       throw new Error(error.error || 'Failed to load products')
     }
 
-    const products = await response.json()
-    return products as Product[]
-  }, [])
+    const result = await response.json()
+    
+    // Gérer l'ancien format (array) et le nouveau format (object avec pagination)
+    if (Array.isArray(result)) {
+      return result as Product[]
+    }
+    
+    // Nouveau format avec pagination
+    setTotalPages(result.pagination?.totalPages || 1)
+    setTotalProducts(result.pagination?.total || 0)
+    return result.data as Product[]
+  }, [currentPage])
 
   const { data: products, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
-    'products',
+    `products-page-${currentPage}`,
     fetchProducts,
     { ttl: 60000 }
   )
+
+  // Recharger quand la page change
+  useEffect(() => {
+    loadProducts()
+  }, [currentPage])
 
   const filteredProducts = (products || []).filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -462,7 +482,7 @@ export default function ProductsPage() {
       {/* Products Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Produits ({filteredProducts.length})</CardTitle>
+          <CardTitle>Produits ({search ? filteredProducts.length : totalProducts || filteredProducts.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -561,6 +581,74 @@ export default function ProductsPage() {
             </div>
           )}
         </CardContent>
+        
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+            <div className="text-sm text-gray-500">
+              Page {currentPage} sur {totalPages} ({totalProducts} produits)
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1 || loading}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Icon name="first_page" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1 || loading}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Icon name="chevron_left" />
+              </button>
+              
+              {/* Numéros de page */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number
+                if (totalPages <= 5) {
+                  pageNum = i + 1
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i
+                } else {
+                  pageNum = currentPage - 2 + i
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    disabled={loading}
+                    className={`px-3 py-1.5 text-sm rounded-lg ${
+                      currentPage === pageNum
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } disabled:opacity-50`}
+                  >
+                    {pageNum}
+                  </button>
+                )
+              })}
+              
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages || loading}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Icon name="chevron_right" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages || loading}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Icon name="last_page" />
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Product Modal */}
