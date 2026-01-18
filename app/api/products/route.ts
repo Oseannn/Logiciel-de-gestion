@@ -1,74 +1,82 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// Forcer le rendu dynamique (pas de pré-rendu au build)
+// Forcer le rendu dynamique
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-// Timeout plus long pour Vercel
 export const maxDuration = 30
 
-// Créer le client Supabase Admin de manière lazy
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  
-  if (!url || !key) {
-    throw new Error('Missing Supabase environment variables')
-  }
-  
-  return createClient(url, key, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    },
-    db: {
-      schema: 'public'
-    },
-    global: {
-      headers: {
-        'x-connection-timeout': '20000'
-      }
-    }
-  })
-}
-
 export async function GET(request: Request) {
+  const startTime = Date.now()
+  
   try {
-    const supabaseAdmin = getSupabaseAdmin()
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     
-    // Récupérer les paramètres de pagination depuis l'URL
+    // Utiliser service_role si disponible, sinon anon key
+    const key = serviceKey || anonKey
+    
+    if (!url || !key) {
+      return NextResponse.json({ 
+        error: 'Missing Supabase environment variables',
+        hasUrl: !!url,
+        hasServiceKey: !!serviceKey,
+        hasAnonKey: !!anonKey
+      }, { status: 500 })
+    }
+    
+    const supabase = createClient(url, key, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+
+    // Récupérer les paramètres de pagination
     const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '100')
+    const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 200)
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Requête optimisée avec limite
-    const { data: products, error: productsError } = await supabaseAdmin
+    console.log(`[Products API] Fetching products with limit=${limit}, offset=${offset}`)
+
+    // Requête simple et rapide
+    const { data: products, error: productsError } = await supabase
       .from('products')
       .select('id, name, sku, brand, category, price, image_url, active')
       .order('name')
       .range(offset, offset + limit - 1)
 
     if (productsError) {
-      console.error('Error loading products:', productsError)
-      return NextResponse.json({ error: productsError.message }, { status: 500 })
+      console.error('[Products API] Error:', productsError)
+      return NextResponse.json({ 
+        error: productsError.message,
+        code: productsError.code,
+        details: productsError.details,
+        duration: Date.now() - startTime
+      }, { status: 500 })
     }
 
     if (!products || products.length === 0) {
+      console.log('[Products API] No products found')
       return NextResponse.json([])
     }
 
-    // Récupérer les variantes seulement pour les produits chargés
+    console.log(`[Products API] Found ${products.length} products in ${Date.now() - startTime}ms`)
+
+    // Récupérer les variantes
     const productIds = products.map(p => p.id)
     
-    const { data: variants, error: variantsError } = await supabaseAdmin
+    const { data: variants, error: variantsError } = await supabase
       .from('product_variants')
       .select('id, product_id, size, color, stock')
       .in('product_id', productIds)
 
     if (variantsError) {
-      console.error('Error loading variants:', variantsError)
+      console.error('[Products API] Variants error:', variantsError)
     }
+
+    console.log(`[Products API] Found ${variants?.length || 0} variants in ${Date.now() - startTime}ms`)
 
     // Combiner les données
     const variantsByProduct = (variants || []).reduce((acc: Record<string, any[]>, v) => {
@@ -82,12 +90,14 @@ export async function GET(request: Request) {
       product_variants: variantsByProduct[p.id] || []
     }))
 
+    console.log(`[Products API] Total duration: ${Date.now() - startTime}ms`)
+
     return NextResponse.json(productsWithVariants)
   } catch (error: any) {
-    console.error('API Error:', error)
+    console.error('[Products API] Exception:', error)
     return NextResponse.json({ 
       error: error.message || 'Internal server error',
-      hint: 'Check SUPABASE_SERVICE_ROLE_KEY environment variable'
+      duration: Date.now() - startTime
     }, { status: 500 })
   }
 }
