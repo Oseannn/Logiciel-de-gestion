@@ -2,47 +2,58 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'edge'
 
 export async function GET(request: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  
-  const supabase = createClient(url, key)
-  const { searchParams } = new URL(request.url)
-  const limit = parseInt(searchParams.get('limit') || '10')
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    
+    const supabase = createClient(url, key)
+    
+    const { searchParams } = new URL(request.url)
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
+    const limit = Math.min(parseInt(searchParams.get('limit') || '12'), 50)
+    const offset = (page - 1) * limit
 
-  // Requête simple sans JOIN
-  const { data, error } = await supabase
-    .from('products')
-    .select('id, name, sku, brand, category, price, image_url, active')
-    .order('name')
-    .limit(limit)
+    // Une seule requête avec JOIN
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        id, name, sku, brand, category, price, image_url, active,
+        product_variants (id, size, color, stock)
+      `)
+      .order('name')
+      .range(offset, offset + limit)
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
-  // Récupérer les variantes séparément
-  if (data && data.length > 0) {
-    const ids = data.map(p => p.id)
-    const { data: variants } = await supabase
-      .from('product_variants')
-      .select('id, product_id, size, color, stock')
-      .in('product_id', ids)
-
-    const variantMap: Record<string, any[]> = {}
-    ;(variants || []).forEach(v => {
-      if (!variantMap[v.product_id]) variantMap[v.product_id] = []
-      variantMap[v.product_id].push(v)
-    })
-
-    const result = data.map(p => ({
-      ...p,
-      product_variants: variantMap[p.id] || []
+    const products = (data || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      brand: p.brand,
+      category: p.category,
+      price: p.price,
+      image_url: p.image_url,
+      active: p.active,
+      product_variants: p.product_variants || []
     }))
 
-    return NextResponse.json(result)
+    // Format avec pagination simple
+    const hasMore = products.length > limit
+    
+    return NextResponse.json({
+      data: hasMore ? products.slice(0, limit) : products,
+      pagination: {
+        page,
+        limit,
+        hasMore
+      }
+    })
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
-
-  return NextResponse.json([])
 }
