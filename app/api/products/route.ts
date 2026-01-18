@@ -16,13 +16,10 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '12'), 50)
     const offset = (page - 1) * limit
 
-    // Une seule requête avec JOIN
-    const { data, error } = await supabase
+    // Requête 1: Produits seulement (rapide)
+    const { data: products, error } = await supabase
       .from('products')
-      .select(`
-        id, name, sku, brand, category, price, image_url, active,
-        product_variants (id, size, color, stock)
-      `)
+      .select('id, name, sku, brand, category, price, image_url, active')
       .order('name')
       .range(offset, offset + limit)
 
@@ -30,27 +27,36 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const products = (data || []).map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      sku: p.sku,
-      brand: p.brand,
-      category: p.category,
-      price: p.price,
-      image_url: p.image_url,
-      active: p.active,
-      product_variants: p.product_variants || []
+    if (!products || products.length === 0) {
+      return NextResponse.json({ data: [], pagination: { page, limit, hasMore: false } })
+    }
+
+    // Requête 2: Variantes pour ces produits
+    const ids = products.map(p => p.id)
+    const { data: variants } = await supabase
+      .from('product_variants')
+      .select('id, product_id, size, color, stock')
+      .in('product_id', ids)
+
+    // Mapper les variantes par produit
+    const variantMap: Record<string, any[]> = {}
+    ;(variants || []).forEach((v: any) => {
+      if (!variantMap[v.product_id]) variantMap[v.product_id] = []
+      variantMap[v.product_id].push({ id: v.id, size: v.size, color: v.color, stock: v.stock })
+    })
+
+    // Combiner
+    const result = products.map(p => ({
+      ...p,
+      product_variants: variantMap[p.id] || []
     }))
 
-    // Format avec pagination simple
-    const hasMore = products.length > limit
-    
     return NextResponse.json({
-      data: hasMore ? products.slice(0, limit) : products,
+      data: result,
       pagination: {
         page,
         limit,
-        hasMore
+        hasMore: products.length > limit
       }
     })
   } catch (error: any) {
