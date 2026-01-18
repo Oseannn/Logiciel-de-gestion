@@ -11,27 +11,18 @@ export async function GET(request: Request) {
   
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     
-    // Utiliser service_role si disponible, sinon anon key
-    const key = serviceKey || anonKey
-    
-    if (!url || !key) {
+    if (!url || !anonKey) {
       return NextResponse.json({ 
         error: 'Missing Supabase environment variables',
         hasUrl: !!url,
-        hasServiceKey: !!serviceKey,
         hasAnonKey: !!anonKey
       }, { status: 500 })
     }
     
-    const supabase = createClient(url, key, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    })
+    // Utiliser ANON KEY uniquement (plus rapide, RLS simplifié)
+    const supabase = createClient(url, anonKey)
 
     // Récupérer les paramètres de pagination
     const { searchParams } = new URL(request.url)
