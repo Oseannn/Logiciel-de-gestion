@@ -13,30 +13,25 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing Supabase environment variables' }, { status: 500 })
     }
 
-    const supabase = createClient(url, anonKey)
-
     const { searchParams } = new URL(request.url)
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
-    const limit = Math.min(Math.max(1, parseInt(searchParams.get('limit') || '10')), 50)
-    const offset = (page - 1) * limit
+    const idsParam = searchParams.get('ids') || ''
+    const ids = idsParam.split(',').map(id => id.trim()).filter(Boolean)
 
-    // Produits uniquement (rapide)
-    const { data: products, error } = await supabase
-      .from('products')
-      .select('id, name, sku, brand, category, price, image_url, active')
-      .order('name')
-      .range(offset, offset + limit)
+    if (ids.length === 0) {
+      return NextResponse.json({ data: [] })
+    }
+
+    const supabase = createClient(url, anonKey)
+    const { data, error } = await supabase
+      .from('product_variants')
+      .select('id, product_id, size, color, stock')
+      .in('product_id', ids)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const hasMore = (products || []).length > limit
-
-    return NextResponse.json({
-      data: hasMore ? (products || []).slice(0, limit) : (products || []),
-      pagination: { page, limit, hasMore }
-    })
+    return NextResponse.json({ data: data || [] })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
   }

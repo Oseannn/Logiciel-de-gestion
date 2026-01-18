@@ -16,7 +16,7 @@ export function useOfflineProducts() {
   const loadProducts = useCallback(async () => {
     setLoading(true)
 
-    // Essayer d'abord en ligne via l'API
+    // Essayer d'abord en ligne via l'API (produits rapides)
     if (navigator.onLine) {
       try {
         const response = await fetch('/api/products?page=1&limit=50')
@@ -28,6 +28,25 @@ export function useOfflineProducts() {
         const data = Array.isArray(result) ? result : (result.data || [])
 
         if (data) {
+          // Charger les variantes en second temps
+          const ids = data.map((p: any) => p.id).join(',')
+          let variants: any[] = []
+          try {
+            const variantsResponse = await fetch(`/api/product-variants?ids=${ids}`)
+            if (variantsResponse.ok) {
+              const variantsResult = await variantsResponse.json()
+              variants = variantsResult.data || []
+            }
+          } catch (e) {
+            // ignore
+          }
+
+          const variantMap: Record<string, any[]> = {}
+          variants.forEach(v => {
+            if (!variantMap[v.product_id]) variantMap[v.product_id] = []
+            variantMap[v.product_id].push(v)
+          })
+
           const offlineProducts: OfflineProduct[] = data.map((p: any) => ({
             id: p.id,
             name: p.name,
@@ -37,7 +56,7 @@ export function useOfflineProducts() {
             price: p.price,
             image_url: p.image_url,
             active: p.active,
-            variants: (p.product_variants || []) as any[],
+            variants: (variantMap[p.id] || []) as any[],
             synced_at: new Date().toISOString()
           }))
 
