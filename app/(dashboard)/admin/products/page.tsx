@@ -43,6 +43,9 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+  const ITEMS_PER_PAGE = 10
 
   // Form state
   const [formData, setFormData] = useState({
@@ -61,9 +64,9 @@ export default function ProductsPage() {
   const supabase = createClient()
   const supabaseUntyped = createUntypedClient()
 
-  // Utiliser le cache pour les produits - via API Route pour éviter les timeouts
+  // Utiliser le cache pour les produits - pagination serveur
   const fetchProducts = useCallback(async () => {
-    const response = await fetch('/api/products')
+    const response = await fetch(`/api/products?page=${currentPage}&limit=${ITEMS_PER_PAGE}`)
 
     if (!response.ok) {
       const error = await response.json()
@@ -71,15 +74,24 @@ export default function ProductsPage() {
       throw new Error(error.error || 'Failed to load products')
     }
 
-    const products = await response.json()
-    return products as Product[]
-  }, [])
+    const result = await response.json()
+    if (Array.isArray(result)) {
+      setHasMore(false)
+      return result as Product[]
+    }
+    setHasMore(Boolean(result.pagination?.hasMore))
+    return (result.data || []) as Product[]
+  }, [currentPage])
 
   const { data: products, loading, refresh: loadProducts, mutate } = useDataCache<Product[]>(
-    'products',
+    `products-page-${currentPage}`,
     fetchProducts,
     { ttl: 60000 }
   )
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search])
 
   const filteredProducts = (products || []).filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -457,6 +469,27 @@ export default function ProductsPage() {
             className="max-w-md"
           />
         </CardContent>
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+          <div className="text-sm text-gray-500">
+            Page {currentPage}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1 || loading || search.length > 0}
+              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Icon name="chevron_left" />
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => p + 1)}
+              disabled={!hasMore || loading || search.length > 0}
+              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Icon name="chevron_right" />
+            </button>
+          </div>
+        </div>
       </Card>
 
       {/* Products Table */}

@@ -16,21 +16,19 @@ export function useOfflineProducts() {
   const loadProducts = useCallback(async () => {
     setLoading(true)
 
-    // Essayer d'abord en ligne
+    // Essayer d'abord en ligne via l'API
     if (navigator.onLine) {
       try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from('products')
-          .select(`
-            id, name, sku, brand, category, price, image_url, active,
-            product_variants (id, product_id, size, color, stock)
-          `)
-          .eq('active', true)
-          .order('name') as { data: { id: string; name: string; sku: string | null; brand: string | null; category: string; price: number; image_url: string | null; active: boolean; product_variants: any[] }[] | null; error: any }
+        const response = await fetch('/api/products?page=1&limit=50')
+        if (!response.ok) {
+          throw new Error('Failed to load products')
+        }
 
-        if (!error && data) {
-          const offlineProducts: OfflineProduct[] = data.map(p => ({
+        const result = await response.json()
+        const data = Array.isArray(result) ? result : (result.data || [])
+
+        if (data) {
+          const offlineProducts: OfflineProduct[] = data.map((p: any) => ({
             id: p.id,
             name: p.name,
             sku: p.sku,
