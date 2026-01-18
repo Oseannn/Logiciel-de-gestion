@@ -547,10 +547,10 @@ export default function ProductsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredProducts.map((product) => {
-                    const totalStock = product.product_variants.reduce((sum, v) => sum + v.stock, 0)
+                    const totalStock = (product.product_variants || []).reduce((sum, v) => sum + v.stock, 0)
                     const lowStock = totalStock < 5
                     // Vérifier si c'est un produit avec de vraies variantes (taille/couleur)
-                    const hasRealVariants = product.product_variants.some(v => v.size || v.color)
+                    const hasRealVariants = (product.product_variants || []).some(v => v.size || v.color)
 
                     return (
                       <tr key={product.id} className="hover:bg-gray-50">
