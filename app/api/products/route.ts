@@ -3,8 +3,7 @@ import { NextResponse } from 'next/server'
 
 // Forcer le rendu dynamique
 export const dynamic = 'force-dynamic'
-export const runtime = 'nodejs'
-export const maxDuration = 30
+export const runtime = 'edge' // Edge runtime est plus rapide pour les cold starts
 
 export async function GET(request: Request) {
   const startTime = Date.now()
@@ -21,71 +20,49 @@ export async function GET(request: Request) {
       }, { status: 500 })
     }
     
-    // Utiliser ANON KEY uniquement (plus rapide, RLS simplifié)
     const supabase = createClient(url, anonKey)
 
-    // Récupérer les paramètres de pagination
+    // Récupérer les paramètres
     const { searchParams } = new URL(request.url)
-    const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 200)
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100)
 
-    console.log(`[Products API] Fetching products with limit=${limit}, offset=${offset}`)
-
-    // Requête simple et rapide
+    // Requête unique avec JOIN pour être plus rapide
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, name, sku, brand, category, price, image_url, active')
+      .select(`
+        id, name, sku, brand, category, price, image_url, active,
+        product_variants (id, size, color, stock)
+      `)
       .order('name')
-      .range(offset, offset + limit - 1)
+      .limit(limit)
 
     if (productsError) {
-      console.error('[Products API] Error:', productsError)
       return NextResponse.json({ 
         error: productsError.message,
         code: productsError.code,
-        details: productsError.details,
         duration: Date.now() - startTime
       }, { status: 500 })
     }
 
     if (!products || products.length === 0) {
-      console.log('[Products API] No products found')
       return NextResponse.json([])
     }
 
-    console.log(`[Products API] Found ${products.length} products in ${Date.now() - startTime}ms`)
-
-    // Récupérer les variantes
-    const productIds = products.map(p => p.id)
-    
-    const { data: variants, error: variantsError } = await supabase
-      .from('product_variants')
-      .select('id, product_id, size, color, stock')
-      .in('product_id', productIds)
-
-    if (variantsError) {
-      console.error('[Products API] Variants error:', variantsError)
-    }
-
-    console.log(`[Products API] Found ${variants?.length || 0} variants in ${Date.now() - startTime}ms`)
-
-    // Combiner les données
-    const variantsByProduct = (variants || []).reduce((acc: Record<string, any[]>, v) => {
-      if (!acc[v.product_id]) acc[v.product_id] = []
-      acc[v.product_id].push({ id: v.id, size: v.size, color: v.color, stock: v.stock })
-      return acc
-    }, {})
-
-    const productsWithVariants = products.map(p => ({
-      ...p,
-      product_variants: variantsByProduct[p.id] || []
+    // Formater pour garder la compatibilité
+    const formatted = products.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      brand: p.brand,
+      category: p.category,
+      price: p.price,
+      image_url: p.image_url,
+      active: p.active,
+      product_variants: p.product_variants || []
     }))
 
-    console.log(`[Products API] Total duration: ${Date.now() - startTime}ms`)
-
-    return NextResponse.json(productsWithVariants)
+    return NextResponse.json(formatted)
   } catch (error: any) {
-    console.error('[Products API] Exception:', error)
     return NextResponse.json({ 
       error: error.message || 'Internal server error',
       duration: Date.now() - startTime
