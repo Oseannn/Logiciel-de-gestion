@@ -32,6 +32,7 @@ export default function ClientsPage() {
   const [showModal, setShowModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedClient, setSelectedClient] = useState<ClientWithHistory | null>(null)
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -58,53 +59,121 @@ export default function ClientsPage() {
     { ttl: 60000 }
   )
 
+  const openEditModal = (client: Client) => {
+    setEditingClient(client)
+    setFormData({
+      first_name: client.first_name,
+      last_name: client.last_name,
+      phone: client.phone || '',
+      type: client.type || 'Regular',
+    })
+    setShowModal(true)
+  }
+
+  const openNewModal = () => {
+    setEditingClient(null)
+    setFormData({ first_name: '', last_name: '', phone: '', type: 'Regular' })
+    setShowModal(true)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
 
-    // Créer un client temporaire pour mise à jour optimiste
-    const tempClient: Client = {
-      id: `temp-${Date.now()}`,
-      first_name: formData.first_name,
-      last_name: formData.last_name,
-      phone: formData.phone,
-      email: null,
-      type: formData.type,
-      total_spent: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      created_by: user.id
+    const supabaseUntyped = createUntypedClient()
+
+    if (editingClient) {
+      // Mode modification
+      mutate(prev => (prev || []).map(c => 
+        c.id === editingClient.id ? { ...c, ...formData } : c
+      ))
+      
+      setShowModal(false)
+      toast.success('Client modifié avec succès !')
+
+      try {
+        const { error } = await supabaseUntyped
+          .from('clients')
+          .update({
+            first_name: formData.first_name,
+            last_name: formData.last_name,
+            phone: formData.phone,
+            type: formData.type,
+          })
+          .eq('id', editingClient.id)
+
+        if (error) throw error
+      } catch (error) {
+        loadClients()
+        console.error('Error updating client:', error)
+        toast.error('Erreur lors de la modification')
+      }
+    } else {
+      // Mode création
+      const tempClient: Client = {
+        id: `temp-${Date.now()}`,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        phone: formData.phone,
+        email: null,
+        type: formData.type,
+        total_spent: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        created_by: user.id
+      }
+
+      mutate(prev => [tempClient, ...(prev || [])])
+      
+      setShowModal(false)
+      toast.success('Client créé avec succès !')
+
+      try {
+        const { data: newClient, error } = await supabaseUntyped
+          .from('clients')
+          .insert({
+            ...formData,
+            created_by: user.id
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+
+        mutate(prev => (prev || []).map(c => 
+          c.id === tempClient.id ? (newClient as Client) : c
+        ))
+      } catch (error) {
+        mutate(prev => (prev || []).filter(c => c.id !== tempClient.id))
+        console.error('Error creating client:', error)
+        toast.error('Erreur lors de la création du client')
+      }
     }
 
-    // Mise à jour optimiste immédiate
-    mutate(prev => [tempClient, ...(prev || [])])
-    
-    setShowModal(false)
     setFormData({ first_name: '', last_name: '', phone: '', type: 'Regular' })
-    toast.success('Client créé avec succès !')
+    setEditingClient(null)
+  }
+
+  const handleDeleteClient = async (client: Client) => {
+    if (!confirm(`Voulez-vous vraiment supprimer ${client.first_name} ${client.last_name} ?`)) {
+      return
+    }
+
+    mutate(prev => (prev || []).filter(c => c.id !== client.id))
+    toast.success('Client supprimé')
 
     try {
       const supabaseUntyped = createUntypedClient()
-      const { data: newClient, error } = await supabaseUntyped
+      const { error } = await supabaseUntyped
         .from('clients')
-        .insert({
-          ...formData,
-          created_by: user.id
-        })
-        .select()
-        .single()
+        .delete()
+        .eq('id', client.id)
 
       if (error) throw error
-
-      // Remplacer le client temporaire par le vrai
-      mutate(prev => (prev || []).map(c => 
-        c.id === tempClient.id ? (newClient as Client) : c
-      ))
     } catch (error) {
-      // Annuler la mise à jour optimiste
-      mutate(prev => (prev || []).filter(c => c.id !== tempClient.id))
-      console.error('Error creating client:', error)
-      toast.error('Erreur lors de la création du client')
+      loadClients()
+      console.error('Error deleting client:', error)
+      toast.error('Erreur lors de la suppression')
     }
   }
 
@@ -234,7 +303,7 @@ export default function ClientsPage() {
             Exporter
           </button>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={openNewModal}
             className="flex items-center px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-blue-600 transition-colors shadow-lg shadow-primary/30"
           >
             <Icon name="person_add" className="mr-2" />
@@ -295,12 +364,29 @@ export default function ClientsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => viewClientDetails(client)}
-                        className="p-2 text-gray-400 hover:text-primary transition-colors"
-                      >
-                        <Icon name="visibility" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => viewClientDetails(client)}
+                          className="p-2 text-gray-400 hover:text-primary transition-colors"
+                          title="Voir détails"
+                        >
+                          <Icon name="visibility" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(client)}
+                          className="p-2 text-blue-400 hover:text-blue-600 transition-colors"
+                          title="Modifier"
+                        >
+                          <Icon name="edit" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClient(client)}
+                          className="p-2 text-red-400 hover:text-red-600 transition-colors"
+                          title="Supprimer"
+                        >
+                          <Icon name="delete" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -310,8 +396,8 @@ export default function ClientsPage() {
         )}
       </div>
 
-      {/* New Client Modal */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nouveau Client">
+      {/* New/Edit Client Modal */}
+      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setEditingClient(null) }} title={editingClient ? 'Modifier Client' : 'Nouveau Client'}>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Input
@@ -346,11 +432,11 @@ export default function ClientsPage() {
             </select>
           </div>
           <div className="flex gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setShowModal(false)} className="flex-1">
+            <Button type="button" variant="secondary" onClick={() => { setShowModal(false); setEditingClient(null) }} className="flex-1">
               Annuler
             </Button>
             <Button type="submit" className="flex-1">
-              Enregistrer
+              {editingClient ? 'Modifier' : 'Enregistrer'}
             </Button>
           </div>
         </form>
