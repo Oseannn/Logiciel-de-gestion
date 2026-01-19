@@ -45,7 +45,6 @@ export default function ProductsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
-  const [variantsLoading, setVariantsLoading] = useState(false)
   const ITEMS_PER_PAGE = 10
 
   // Form state
@@ -93,32 +92,6 @@ export default function ProductsPage() {
   useEffect(() => {
     setCurrentPage(1)
   }, [search])
-
-  // Charger les variantes après le rendu pour accélérer l'affichage initial
-  useEffect(() => {
-    const loadVariants = async () => {
-      if (!products || products.length === 0) return
-      const ids = products.map(p => p.id).join(',')
-      setVariantsLoading(true)
-      try {
-        const response = await fetch(`/api/product-variants?ids=${ids}`)
-        if (!response.ok) return
-        const result = await response.json()
-        const variantMap: Record<string, ProductVariant[]> = {}
-        ;(result.data || []).forEach((v: ProductVariant & { product_id: string }) => {
-          if (!variantMap[v.product_id]) variantMap[v.product_id] = []
-          variantMap[v.product_id].push({ id: v.id, size: v.size, color: v.color, stock: v.stock })
-        })
-        mutate(prev => (prev || []).map(p => ({
-          ...p,
-          product_variants: variantMap[p.id] || []
-        })))
-      } finally {
-        setVariantsLoading(false)
-      }
-    }
-    loadVariants()
-  }, [products, mutate])
 
   const filteredProducts = (products || []).filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -547,10 +520,10 @@ export default function ProductsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredProducts.map((product) => {
-                    const totalStock = (product.product_variants || []).reduce((sum, v) => sum + v.stock, 0)
+                    const totalStock = product.product_variants.reduce((sum, v) => sum + v.stock, 0)
                     const lowStock = totalStock < 5
                     // Vérifier si c'est un produit avec de vraies variantes (taille/couleur)
-                    const hasRealVariants = (product.product_variants || []).some(v => v.size || v.color)
+                    const hasRealVariants = product.product_variants.some(v => v.size || v.color)
 
                     return (
                       <tr key={product.id} className="hover:bg-gray-50">
@@ -575,7 +548,7 @@ export default function ProductsPage() {
                         <td className="px-6 py-4 font-semibold">{formatCurrency(product.price)}</td>
                         <td className="px-6 py-4 text-center">
                           <span className={lowStock ? 'text-red-600 font-bold' : 'text-gray-600'}>
-                            {variantsLoading && product.product_variants.length === 0 ? '...' : totalStock}
+                            {totalStock}
                           </span>
                           {hasRealVariants && (
                             <span className="text-xs text-gray-400 ml-1">
